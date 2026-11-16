@@ -23,7 +23,7 @@ cliente.connect(('127.0.0.1', 5555))
 hilo = threading.Thread(target=recibir, args=(cliente,))
 hilo.start()
 
-# ciclo principal para escribi
+# ciclo principal para escribir
 while True:
     texto = input()
     
