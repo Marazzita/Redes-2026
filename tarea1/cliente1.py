@@ -16,11 +16,11 @@ def recibir(sock):
             break
 
 # conexion del cliente
-cliente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-cliente.connect(('127.0.0.1', 5555))
+cliente1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+cliente1.connect(('127.0.0.1', 5555))
 
 # arranco el hilo para recibir mensajes al mismo tiempo que escribo
-hilo = threading.Thread(target=recibir, args=(cliente,))
+hilo = threading.Thread(target=recibir, args=(cliente1,))
 hilo.start()
 
 # ciclo principal para escribir
@@ -28,11 +28,11 @@ while True:
     texto = input()
     
     # encode siempre para mandar
-    cliente.send(texto.encode('utf-8'))
+    cliente1.send(texto.encode('utf-8'))
     
     # cuando /adios termina el programa
     if texto.strip() == '/adios':
         break
 
-cliente.close()
+cliente1.close()
 sys.exit()
