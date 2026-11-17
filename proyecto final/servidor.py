@@ -1,11 +1,11 @@
-import socket
-import threading
+import socket  # Modulo para crear conexiones de red (sockets TCP)
+import threading # Modulo para trabajar con hilos (varios clientes a la vez)
+import hashlib # Hashear contraseñas 
 import json
-import hashlib
 from datetime import datetime
-import mysql.connector
+import mysql.connector # Base de datos
 from mysql.connector import Error
-import requests
+import requests # Para hacer peticiones http
 
 # Configuración de red
 HOST = "127.0.0.1"
@@ -16,8 +16,8 @@ DB_CONFIG = {
     "host": "localhost",
     "port": 3306,
     "user": "root",
-    "password": "",  # Colocar contraseña de MySQL si corresponde
-    "database": "tp_redes_chat",
+    "password": "",  # contraseña de MySQL si corresponde
+    "database": "tp_redes",
     "charset": "utf8mb4"
 }
 
@@ -30,7 +30,7 @@ lock_clientes = threading.Lock()
 # FUNCIONES BASE DE DATOS Y SEGURIDAD
 #------------------------------------------------
 
-def obtener_conexion_db():
+def conexion_db():
     """Crea y retorna una nueva conexión a MySQL."""
     return mysql.connector.connect(**DB_CONFIG)
 
@@ -45,7 +45,7 @@ def validar_credenciales(usuario: str, password: str) -> bool:
     conn_db = None
     cursor = None
     try:
-        conn_db = obtener_conexion_db()
+        conn_db = conexion_db()
         cursor = conn_db.cursor()
         password_hash = hashear_password(password)
 
@@ -67,9 +67,9 @@ def validar_credenciales(usuario: str, password: str) -> bool:
 # FUNCIONES DE API DE GITHUB Y PERSISTENCIA
 #------------------------------------------------
 
-def consultar_y_guardar_repos(usuario_github: str) -> str:
+def consultar_y_guardar_repos(usuario_git: str) -> str:
     """Consulta los repositorios públicos en GitHub y los guarda en la tabla 'repositorios'."""
-    url = f"https://api.github.com/users/{usuario_github}/repos"
+    url = f"https://api.github.com/users/{usuario_git}/repos"
     headers = {"User-Agent": "TP-Integrador-Redes-Python"}
 
     try:
@@ -78,28 +78,28 @@ def consultar_y_guardar_repos(usuario_github: str) -> str:
         return f"Error de red al conectar con GitHub: {e}"
 
     if respuesta.status_code == 404:
-        return f"El usuario de GitHub '{usuario_github}' no existe."
+        return f"El usuario de GitHub '{usuario_git}' no existe."
     if respuesta.status_code != 200:
         return f"Error de la API de GitHub (HTTP {respuesta.status_code})."
 
     repos = respuesta.json()
     if not repos:
-        return f"El usuario '{usuario_github}' no tiene repositorios públicos."
+        return f"El usuario '{usuario_git}' no tiene repositorios públicos."
 
     conn_db = None
     cursor = None
     try:
-        conn_db = obtener_conexion_db()
+        conn_db = conexion_db()
         cursor = conn_db.cursor()
 
         query = """
             INSERT INTO repositorios
-                (usuario_github, nombre_repo, descripcion, url_repo, lenguaje, estrellas)
+                (usuario_git, nombre_repo, descripcion, url_repo, lenguaje, estrellas)
             VALUES (%s, %s, %s, %s, %s, %s)
         """
         registros = [
             (
-                usuario_github,
+                usuario_git,
                 repo.get("name", ""),
                 repo.get("description"),
                 repo.get("html_url", ""),
@@ -118,7 +118,7 @@ def consultar_y_guardar_repos(usuario_github: str) -> str:
         )
         aviso_extra = f"\n  ... y {len(repos) - 15} más." if len(repos) > 15 else ""
         return (
-            f"Se guardaron {len(repos)} repositorios de '{usuario_github}' en la base de datos:\n"
+            f"Se guardaron {len(repos)} repositorios de '{usuario_git}' en la base de datos:\n"
             f"{detalle}{aviso_extra}"
         )
     except Error as e:
@@ -130,9 +130,9 @@ def consultar_y_guardar_repos(usuario_github: str) -> str:
             conn_db.close()
 
 
-def consultar_y_guardar_followers(usuario_github: str) -> str:
+def consultar_y_guardar_followers(usuario_git: str) -> str:
     """Consulta los seguidores en GitHub y los guarda en la tabla 'followers'."""
-    url = f"https://api.github.com/users/{usuario_github}/followers"
+    url = f"https://api.github.com/users/{usuario_git}/followers"
     headers = {"User-Agent": "TP-Integrador-Redes-Python"}
 
     try:
@@ -141,28 +141,28 @@ def consultar_y_guardar_followers(usuario_github: str) -> str:
         return f"Error de red al conectar con GitHub: {e}"
 
     if respuesta.status_code == 404:
-        return f"El usuario de GitHub '{usuario_github}' no existe."
+        return f"El usuario de GitHub '{usuario_git}' no existe."
     if respuesta.status_code != 200:
         return f"Error de la API de GitHub (HTTP {respuesta.status_code})."
 
     followers = respuesta.json()
     if not followers:
-        return f"El usuario '{usuario_github}' no tiene followers públicos."
+        return f"El usuario '{usuario_git}' no tiene followers públicos."
 
     conn_db = None
     cursor = None
     try:
-        conn_db = obtener_conexion_db()
+        conn_db = conexion_db()
         cursor = conn_db.cursor()
 
         query = """
             INSERT INTO followers
-                (usuario_github, follower_usuario, follower_url, tipo)
+                (usuario_git, follower_usuario, follower_url, tipo)
             VALUES (%s, %s, %s, %s)
         """
         registros = [
             (
-                usuario_github,
+                usuario_git,
                 f.get("login", ""),
                 f.get("html_url", ""),
                 f.get("type", "User")
@@ -179,7 +179,7 @@ def consultar_y_guardar_followers(usuario_github: str) -> str:
         )
         aviso_extra = f"\n  ... y {len(followers) - 15} más." if len(followers) > 15 else ""
         return (
-            f"Se guardaron {len(followers)} followers de '{usuario_github}' en la base de datos:\n"
+            f"Se guardaron {len(followers)} followers de '{usuario_git}' en la base de datos:\n"
             f"{detalle}{aviso_extra}"
         )
     except Error as e:
@@ -244,14 +244,14 @@ def procesar_comando(usuario: str, texto_comando: str, conn: socket.socket) -> b
 
     if comando == "/repos":
         if not argumento:
-            enviar_paquete(conn, {"tipo": "mensaje", "mensaje": "Uso correcto: /repos <usuario_github>"})
+            enviar_paquete(conn, {"tipo": "mensaje", "mensaje": "Uso correcto: /repos <usuario_git>"})
             return True
         resultado = consultar_y_guardar_repos(argumento)
         enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
 
     elif comando == "/followers":
         if not argumento:
-            enviar_paquete(conn, {"tipo": "mensaje", "mensaje": "Uso correcto: /followers <usuario_github>"})
+            enviar_paquete(conn, {"tipo": "mensaje", "mensaje": "Uso correcto: /followers <usuario_git>"})
             return True
         resultado = consultar_y_guardar_followers(argumento)
         enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
@@ -361,7 +361,7 @@ def manejar_cliente(conn: socket.socket, addr):
                 "tipo": "auth",
                 "ok": True,
                 "mensaje": (
-                    f"¡Bienvenido/a {usuario_autenticado}!\n"
+                    f"¡Hola {usuario_autenticado}!\n"
                     "Comandos disponibles: /repos <usuario>, /followers <usuario>, "
                     "/hora, /todos \"mensaje\", /usuarios, /adios"
                 )
@@ -396,9 +396,9 @@ def manejar_cliente(conn: socket.socket, addr):
         conn.close()
 
 
-# ==============================================================================
+#-------------------------------------------------------------
 # CONSOLA INTERACTIVA DEL SERVIDOR (CHAT SERVIDOR -> CLIENTE)
-# ==============================================================================
+#-------------------------------------------------------------
 
 def consola_servidor():
     """Permite al operador del servidor chatear con los clientes conectados."""
@@ -438,9 +438,9 @@ def consola_servidor():
             break
 
 
-# ==============================================================================
+#------------------------------------------------
 # PUNTO DE ENTRADA DEL SERVIDOR
-# ==============================================================================
+#------------------------------------------------
 
 def iniciar_servidor():
     servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

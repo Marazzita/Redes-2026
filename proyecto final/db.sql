@@ -13,10 +13,10 @@ CREATE TABLE IF NOT EXISTS usuarios (
     creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
--- tabla para almacenar repositorios consultados con /repos <usuario>
-CREATE TABLE IF NOT EXISTS `repositorios` (
+-- tabla para almacenar repositorios (consulta con /repos usuario)
+CREATE TABLE IF NOT EXISTS repositorios (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    usuario_github VARCHAR(100) NOT NULL,
+    usuario_git VARCHAR(100) NOT NULL,
     nombre_repo VARCHAR(150) NOT NULL,
     descripcion TEXT NULL,
     url_repo VARCHAR(255) NOT NULL,
@@ -25,20 +25,20 @@ CREATE TABLE IF NOT EXISTS `repositorios` (
     fecha_consulta TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
--- Tabla: followers (comando /followers usuario)
+-- tabla followers (comando /followers usuario)
 CREATE TABLE IF NOT EXISTS `followers` (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    usuario_github VARCHAR(100) NOT NULL,
+    usuario_git VARCHAR(100) NOT NULL,
     follower_usuario VARCHAR(100) NOT NULL,
     follower_url VARCHAR(255) NOT NULL,
     tipo VARCHAR(50) NULL,
     fecha_consulta TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
--- Datos iniciales de prueba (contraseñas hasheadas en SHA-256)
+-- datos iniciales de prueba (contraseñas hasheadas en SHA-256)
 INSERT INTO usuarios (usuario, password_hash) VALUES
 ('admin',    SHA2('admin123', 256)),
+('oriana', SHA2('1234', 256))
 ('alumno1',  SHA2('redes2026', 256)),
-('alumno2',  SHA2('clave456', 256)),
-('invitado', SHA2('1234', 256))
+('alumno2',  SHA2('clave456', 256))
 ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash);
