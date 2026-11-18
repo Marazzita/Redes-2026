@@ -1,11 +1,11 @@
 import socket  # Modulo para crear conexiones de red (sockets TCP)
-import threading # Modulo para trabajar con hilos (varios clientes a la vez)
-import hashlib # Hashear contraseñas 
+import threading  # Modulo para trabajar con hilos (varios clientes a la vez)
+import hashlib  # Hashear contraseñas
 import json
 from datetime import datetime
-import mysql.connector # Base de datos
+import mysql.connector  # Base de datos
 from mysql.connector import Error
-import requests # Para hacer peticiones http
+import requests  # Para hacer peticiones http
 
 # Configuración de red
 HOST = "127.0.0.1"
@@ -21,7 +21,7 @@ DB_CONFIG = {
     "charset": "utf8mb4"
 }
 
-# Registro compartido de clientes autenticados: {usuario: {"socket": conn, "addr": addr}}
+# Registro compartido de clientes autenticados: {usuario: {"socket": conn, "addr": addr, "rol": rol}}
 clientes_conectados = {}
 lock_clientes = threading.Lock()
 
@@ -40,8 +40,8 @@ def hashear_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
-def validar_credenciales(usuario: str, password: str) -> bool:
-    """Valida usuario y contraseña contra la tabla 'usuarios' usando consultas parametrizadas."""
+def validar_credenciales(usuario: str, password: str):
+    """Valida usuario y contraseña en MySQL. Retorna el rol ('admin'/'usuario') o None si falla."""
     conn_db = None
     cursor = None
     try:
@@ -49,20 +49,21 @@ def validar_credenciales(usuario: str, password: str) -> bool:
         cursor = conn_db.cursor()
         password_hash = hashear_password(password)
 
-        query = "SELECT id FROM usuarios WHERE usuario = %s AND password_hash = %s"
+        query = "SELECT rol FROM usuarios WHERE usuario = %s AND password_hash = %s"
         cursor.execute(query, (usuario, password_hash))
         fila = cursor.fetchone()
-        return fila is not None
+        return fila[0] if fila else None
     except Error as e:
         print(f"[ERROR DB] Fallo al validar credenciales: {e}")
-        return False
+        return None
     finally:
         if cursor:
             cursor.close()
         if conn_db and conn_db.is_connected():
             conn_db.close()
 
-def crear_usuario_bd(nuevo_usuario: str, nueva_password: str) -> str:
+
+def crear_usuario_bd(nuevo_usuario: str, nueva_password: str, rol: str = "usuario") -> str:
     """Inserta un nuevo usuario en MySQL con su contraseña hasheada en SHA-256."""
     conn_db = None
     cursor = None
@@ -71,10 +72,10 @@ def crear_usuario_bd(nuevo_usuario: str, nueva_password: str) -> str:
         cursor = conn_db.cursor()
         password_hash = hashear_password(nueva_password)
 
-        query = "INSERT INTO usuarios (usuario, password_hash) VALUES (%s, %s)"
-        cursor.execute(query, (nuevo_usuario, password_hash))
+        query = "INSERT INTO usuarios (usuario, password_hash, rol) VALUES (%s, %s, %s)"
+        cursor.execute(query, (nuevo_usuario, password_hash, rol))
         conn_db.commit()
-        return f"[ADMIN] Usuario '{nuevo_usuario}' creado correctamente."
+        return f"[ADMIN] Usuario '{nuevo_usuario}' (rol: {rol}) creado correctamente."
     except Error as e:
         if e.errno == 1062:  # Código de MySQL para clave duplicada (UNIQUE)
             return f"[ADMIN] Error: El usuario '{nuevo_usuario}' ya existe."
@@ -84,6 +85,7 @@ def crear_usuario_bd(nuevo_usuario: str, nueva_password: str) -> str:
             cursor.close()
         if conn_db and conn_db.is_connected():
             conn_db.close()
+
 
 #------------------------------------------------
 # FUNCIONES DE API DE GITHUB Y PERSISTENCIA
@@ -156,9 +158,11 @@ def consultar_y_guardar_repos(usuario_git: str) -> str:
         if conn_db and conn_db.is_connected():
             conn_db.close()
 
+
 #--------------------------------------------------------------
 # Consultar y Guardar seguidores
 #--------------------------------------------------------------
+
 def consultar_y_guardar_followers(usuario_git: str) -> str:
     """Consulta los seguidores en GitHub y los guarda en la tabla 'followers'."""
     url = f"https://api.github.com/users/{usuario_git}/followers"
@@ -218,6 +222,7 @@ def consultar_y_guardar_followers(usuario_git: str) -> str:
             cursor.close()
         if conn_db and conn_db.is_connected():
             conn_db.close()
+
 
 #--------------------------------------------------------------
 # Eliminar repos
@@ -293,12 +298,13 @@ def leer_lineas_json(sock: socket.socket):
 
 
 #------------------------------------------------
-# PROCESAMIENTO DE COMANDOS Y  CLIENTES
+# PROCESAMIENTO DE COMANDOS Y CLIENTES
 #------------------------------------------------
 
-def procesar_comando(usuario: str, texto_comando: str, conn: socket.socket) -> bool:
+def procesar_comando(usuario: str, rol: str, texto_comando: str, conn: socket.socket) -> bool:
     """
     Procesa los comandos iniciados con '/'.
+    Verifica el rol del usuario para comandos administrativos.
     Retorna False si el cliente solicitó desconectarse (/adios), True en caso contrario.
     """
     partes = texto_comando.strip().split(" ", 1)
@@ -320,13 +326,13 @@ def procesar_comando(usuario: str, texto_comando: str, conn: socket.socket) -> b
         enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
 
     elif comando == "/eliminar_repos":
-        # Verificación de permisos: solo el usuario 'admin' puede ejecutar este comando
-        if usuario.lower() != "admin":
+        # Verificación de permisos mediante el rol almacenado en MySQL
+        if rol != "admin":
             enviar_paquete(
                 conn,
                 {
                     "tipo": "mensaje",
-                    "mensaje": "[ACCESO DENEGADO] Solo el administrador puede eliminar repositorios."
+                    "mensaje": "[ACCESO DENEGADO] Solo usuarios con rol 'admin' pueden eliminar repositorios."
                 }
             )
             return True
@@ -342,6 +348,46 @@ def procesar_comando(usuario: str, texto_comando: str, conn: socket.socket) -> b
             return True
 
         resultado = eliminar_repositorios(argumento)
+        enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
+
+    elif comando == "/crear_usuario":
+        # Verificación de permisos mediante el rol almacenado en MySQL
+        if rol != "admin":
+            enviar_paquete(
+                conn,
+                {
+                    "tipo": "mensaje",
+                    "mensaje": "[ACCESO DENEGADO] Solo usuarios con rol 'admin' pueden crear usuarios."
+                }
+            )
+            return True
+
+        datos_nuevo = argumento.split()
+        if len(datos_nuevo) not in (2, 3):
+            enviar_paquete(
+                conn,
+                {
+                    "tipo": "mensaje",
+                    "mensaje": "Uso correcto: /crear_usuario <usuario> <contraseña> [rol: usuario|admin]"
+                }
+            )
+            return True
+
+        nuevo_usr = datos_nuevo[0]
+        nueva_pwd = datos_nuevo[1]
+        nuevo_rol = datos_nuevo[2].lower() if len(datos_nuevo) == 3 else "usuario"
+
+        if nuevo_rol not in ("usuario", "admin"):
+            enviar_paquete(
+                conn,
+                {
+                    "tipo": "mensaje",
+                    "mensaje": "Rol inválido. Debe ser 'usuario' o 'admin'."
+                }
+            )
+            return True
+
+        resultado = crear_usuario_bd(nuevo_usr, nueva_pwd, nuevo_rol)
         enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
 
     elif comando == "/hora":
@@ -361,7 +407,7 @@ def procesar_comando(usuario: str, texto_comando: str, conn: socket.socket) -> b
 
     elif comando == "/usuarios":
         with lock_clientes:
-            lista_usuarios = list(clientes_conectados.keys())
+            lista_usuarios = [f"{usr} ({info['rol']})" for usr, info in clientes_conectados.items()]
         listado = ", ".join(lista_usuarios) if lista_usuarios else "Ninguno"
         enviar_paquete(
             conn,
@@ -380,40 +426,17 @@ def procesar_comando(usuario: str, texto_comando: str, conn: socket.socket) -> b
             }
         )
         return False
-    elif comando == "/crear_usuario":
-        if usuario.lower() != "admin":
-            enviar_paquete(
-                conn,
-                {
-                    "tipo": "mensaje",
-                    "mensaje": "[ACCESO DENEGADO] Solo el administrador puede crear usuarios."
-                }
-            )
-            return True
-
-        datos_nuevo = argumento.split()
-        if len(datos_nuevo) != 2:
-            enviar_paquete(
-                conn,
-                {
-                    "tipo": "mensaje",
-                    "mensaje": "Uso correcto: /crear_usuario <usuario> <contraseña>"
-                }
-            )
-            return True
-
-        resultado = crear_usuario_bd(datos_nuevo[0], datos_nuevo[1])
-        enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
 
     else:
+        comandos_disp = "/repos, /followers, /hora, /todos, /usuarios, /adios"
+        if rol == "admin":
+            comandos_disp += ", /eliminar_repos, /crear_usuario"
+
         enviar_paquete(
             conn,
             {
                 "tipo": "mensaje",
-                "mensaje": (
-                    f"Comando '{comando}' no reconocido. "
-                    "Disponibles: /repos, /followers, /eliminar_repos, /hora, /todos, /usuarios, /adios"
-                )
+                "mensaje": f"Comando '{comando}' no reconocido. Disponibles: {comandos_disp}"
             }
         )
 
@@ -437,8 +460,9 @@ def manejar_cliente(conn: socket.socket, addr):
         usuario = primer_paquete.get("usuario", "").strip()
         password = primer_paquete.get("password", "").strip()
 
-        # Validar usuario y contraseña en la base de datos
-        if not usuario or not password or not validar_credenciales(usuario, password):
+        # Validar usuario y contraseña en la base de datos y obtener su rol
+        rol = validar_credenciales(usuario, password) if (usuario and password) else None
+        if not rol:
             print(f"[!] Autenticación fallida para '{usuario}' desde {addr}")
             enviar_paquete(
                 conn,
@@ -462,20 +486,25 @@ def manejar_cliente(conn: socket.socket, addr):
                     }
                 )
                 return
-            clientes_conectados[usuario] = {"socket": conn, "addr": addr}
+            clientes_conectados[usuario] = {"socket": conn, "addr": addr, "rol": rol}
             usuario_autenticado = usuario
 
-        print(f"[OK] Usuario '{usuario_autenticado}' autenticado desde {addr}")
+        print(f"[OK] Usuario '{usuario_autenticado}' (rol: {rol}) autenticado desde {addr}")
+
+        mensaje_bienvenida = (
+            f"¡Hola {usuario_autenticado}! (Rol: {rol})\n"
+            "Comandos disponibles: /repos <usuario>, /followers <usuario>, "
+            "/hora, /todos \"mensaje\", /usuarios, /adios"
+        )
+        if rol == "admin":
+            mensaje_bienvenida += "\nComandos admin: /eliminar_repos <usuario|todo>, /crear_usuario <usuario> <clave> [rol]"
+
         enviar_paquete(
             conn,
             {
                 "tipo": "auth",
                 "ok": True,
-                "mensaje": (
-                    f"¡Hola {usuario_autenticado}!\n"
-                    "Comandos disponibles: /repos <usuario>, /followers <usuario>, "
-                    "/hora, /todos \"mensaje\", /usuarios, /adios"
-                )
+                "mensaje": mensaje_bienvenida
             }
         )
 
@@ -486,8 +515,8 @@ def manejar_cliente(conn: socket.socket, addr):
                 continue
 
             if contenido.startswith("/"):
-                print(f"[CMD - {usuario_autenticado}]: {contenido}")
-                continuar = procesar_comando(usuario_autenticado, contenido, conn)
+                print(f"[CMD - {usuario_autenticado} ({rol})]: {contenido}")
+                continuar = procesar_comando(usuario_autenticado, rol, contenido, conn)
                 if not continuar:
                     break
             else:
