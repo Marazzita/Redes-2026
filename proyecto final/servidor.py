@@ -62,10 +62,37 @@ def validar_credenciales(usuario: str, password: str) -> bool:
         if conn_db and conn_db.is_connected():
             conn_db.close()
 
+def crear_usuario_bd(nuevo_usuario: str, nueva_password: str) -> str:
+    """Inserta un nuevo usuario en MySQL con su contraseña hasheada en SHA-256."""
+    conn_db = None
+    cursor = None
+    try:
+        conn_db = conexion_db()
+        cursor = conn_db.cursor()
+        password_hash = hashear_password(nueva_password)
+
+        query = "INSERT INTO usuarios (usuario, password_hash) VALUES (%s, %s)"
+        cursor.execute(query, (nuevo_usuario, password_hash))
+        conn_db.commit()
+        return f"[ADMIN] Usuario '{nuevo_usuario}' creado correctamente."
+    except Error as e:
+        if e.errno == 1062:  # Código de MySQL para clave duplicada (UNIQUE)
+            return f"[ADMIN] Error: El usuario '{nuevo_usuario}' ya existe."
+        return f"Error al crear usuario en MySQL: {e}"
+    finally:
+        if cursor:
+            cursor.close()
+        if conn_db and conn_db.is_connected():
+            conn_db.close()
 
 #------------------------------------------------
 # FUNCIONES DE API DE GITHUB Y PERSISTENCIA
 #------------------------------------------------
+
+
+#--------------------------------------------------------------
+# Consultar y Guardar repositorios
+#--------------------------------------------------------------
 
 def consultar_y_guardar_repos(usuario_git: str) -> str:
     """Consulta los repositorios públicos en GitHub y los guarda en la tabla 'repositorios'."""
@@ -129,7 +156,9 @@ def consultar_y_guardar_repos(usuario_git: str) -> str:
         if conn_db and conn_db.is_connected():
             conn_db.close()
 
-
+#--------------------------------------------------------------
+# Consultar y Guardar seguidores
+#--------------------------------------------------------------
 def consultar_y_guardar_followers(usuario_git: str) -> str:
     """Consulta los seguidores en GitHub y los guarda en la tabla 'followers'."""
     url = f"https://api.github.com/users/{usuario_git}/followers"
@@ -190,6 +219,40 @@ def consultar_y_guardar_followers(usuario_git: str) -> str:
         if conn_db and conn_db.is_connected():
             conn_db.close()
 
+#--------------------------------------------------------------
+# Eliminar repos
+#--------------------------------------------------------------
+
+def eliminar_repositorios(criterio: str) -> str:
+    """Elimina repositorios de la tabla 'repositorios' por usuario de GitHub o en su totalidad."""
+    conn_db = None
+    cursor = None
+    try:
+        conn_db = conexion_db()
+        cursor = conn_db.cursor()
+
+        if criterio.lower() in ("todo", "todos"):
+            cursor.execute("DELETE FROM repositorios")
+            cantidad = cursor.rowcount
+            conn_db.commit()
+            return f"[ADMIN] Se eliminaron todos los repositorios de la base de datos ({cantidad} registro/s)."
+        else:
+            cursor.execute("DELETE FROM repositorios WHERE usuario_git = %s", (criterio,))
+            cantidad = cursor.rowcount
+            conn_db.commit()
+
+            if cantidad == 0:
+                return f"[ADMIN] No se encontraron repositorios guardados para '{criterio}'."
+            return f"[ADMIN] Se eliminaron {cantidad} repositorio/s de '{criterio}'."
+
+    except Error as e:
+        return f"Error al eliminar repositorios en MySQL: {e}"
+    finally:
+        if cursor:
+            cursor.close()
+        if conn_db and conn_db.is_connected():
+            conn_db.close()
+
 
 #------------------------------------------------
 # PROTOCOLO DE RED Y MENSAJERÍA
@@ -230,7 +293,7 @@ def leer_lineas_json(sock: socket.socket):
 
 
 #------------------------------------------------
-# PROCESAMIENTO DE COMANDOS Y ATENCIÓN A CLIENTES
+# PROCESAMIENTO DE COMANDOS Y  CLIENTES
 #------------------------------------------------
 
 def procesar_comando(usuario: str, texto_comando: str, conn: socket.socket) -> bool:
@@ -256,6 +319,31 @@ def procesar_comando(usuario: str, texto_comando: str, conn: socket.socket) -> b
         resultado = consultar_y_guardar_followers(argumento)
         enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
 
+    elif comando == "/eliminar_repos":
+        # Verificación de permisos: solo el usuario 'admin' puede ejecutar este comando
+        if usuario.lower() != "admin":
+            enviar_paquete(
+                conn,
+                {
+                    "tipo": "mensaje",
+                    "mensaje": "[ACCESO DENEGADO] Solo el administrador puede eliminar repositorios."
+                }
+            )
+            return True
+
+        if not argumento:
+            enviar_paquete(
+                conn,
+                {
+                    "tipo": "mensaje",
+                    "mensaje": "Uso correcto: /eliminar_repos <usuario_git> o /eliminar_repos todo"
+                }
+            )
+            return True
+
+        resultado = eliminar_repositorios(argumento)
+        enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
+
     elif comando == "/hora":
         ahora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         enviar_paquete(conn, {"tipo": "mensaje", "mensaje": f"[Servidor] Hora actual: {ahora}"})
@@ -264,7 +352,6 @@ def procesar_comando(usuario: str, texto_comando: str, conn: socket.socket) -> b
         if not argumento:
             enviar_paquete(conn, {"tipo": "mensaje", "mensaje": 'Uso correcto: /todos "mensaje"'})
             return True
-        # Eliminar comillas envolventes si el usuario las escribió
         if (argumento.startswith('"') and argumento.endswith('"')) or (
             argumento.startswith("'") and argumento.endswith("'")
         ):
@@ -293,6 +380,30 @@ def procesar_comando(usuario: str, texto_comando: str, conn: socket.socket) -> b
             }
         )
         return False
+    elif comando == "/crear_usuario":
+        if usuario.lower() != "admin":
+            enviar_paquete(
+                conn,
+                {
+                    "tipo": "mensaje",
+                    "mensaje": "[ACCESO DENEGADO] Solo el administrador puede crear usuarios."
+                }
+            )
+            return True
+
+        datos_nuevo = argumento.split()
+        if len(datos_nuevo) != 2:
+            enviar_paquete(
+                conn,
+                {
+                    "tipo": "mensaje",
+                    "mensaje": "Uso correcto: /crear_usuario <usuario> <contraseña>"
+                }
+            )
+            return True
+
+        resultado = crear_usuario_bd(datos_nuevo[0], datos_nuevo[1])
+        enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
 
     else:
         enviar_paquete(
@@ -301,7 +412,7 @@ def procesar_comando(usuario: str, texto_comando: str, conn: socket.socket) -> b
                 "tipo": "mensaje",
                 "mensaje": (
                     f"Comando '{comando}' no reconocido. "
-                    "Disponibles: /repos, /followers, /hora, /todos, /usuarios, /adios"
+                    "Disponibles: /repos, /followers, /eliminar_repos, /hora, /todos, /usuarios, /adios"
                 )
             }
         )
@@ -317,7 +428,7 @@ def manejar_cliente(conn: socket.socket, addr):
     try:
         lector = leer_lineas_json(conn)
 
-        # 1. Recibir credenciales iniciales
+        # Recibir credenciales iniciales
         primer_paquete = next(lector, None)
         if not primer_paquete or primer_paquete.get("accion") != "login":
             enviar_paquete(conn, {"tipo": "auth", "ok": False, "mensaje": "Protocolo de inicio inválido."})
@@ -326,7 +437,7 @@ def manejar_cliente(conn: socket.socket, addr):
         usuario = primer_paquete.get("usuario", "").strip()
         password = primer_paquete.get("password", "").strip()
 
-        # 2 y 3. Validar usuario y contraseña en la base de datos
+        # Validar usuario y contraseña en la base de datos
         if not usuario or not password or not validar_credenciales(usuario, password):
             print(f"[!] Autenticación fallida para '{usuario}' desde {addr}")
             enviar_paquete(
@@ -368,7 +479,7 @@ def manejar_cliente(conn: socket.socket, addr):
             }
         )
 
-        # 4 y 5. Bucle principal de recepción de chat y comandos
+        # Bucle principal de recepción de chat y comandos
         for paquete in lector:
             contenido = paquete.get("contenido", "").strip()
             if not contenido:
@@ -412,20 +523,37 @@ def consola_servidor():
             if not entrada:
                 continue
 
-            if entrada.startswith("@") and " " in entrada:
-                destinatario, mensaje = entrada[1:].split(" ", 1)
-                with lock_clientes:
-                    info = clientes_conectados.get(destinatario)
+            if entrada.startswith("@"):
+                partes = entrada[1:].split(None, 1)
+                if len(partes) < 2 or not partes[1].strip():
+                    print("[!] Uso correcto para privado: @usuario mensaje")
+                    continue
 
-                if info:
+                destinatario, mensaje = partes[0], partes[1].strip()
+                sock_destino = None
+                nombre_real = destinatario
+
+                with lock_clientes:
+                    for usr, info in clientes_conectados.items():
+                        if usr.lower() == destinatario.lower():
+                            sock_destino = info["socket"]
+                            nombre_real = usr
+                            break
+
+                if sock_destino:
                     enviado = enviar_paquete(
-                        info["socket"],
+                        sock_destino,
                         {"tipo": "mensaje", "mensaje": f"[Servidor (privado)]: {mensaje}"}
                     )
                     if enviado:
-                        print(f"[Enviado a {destinatario}]: {mensaje}")
+                        print(f"[Privado -> {nombre_real}]: {mensaje}")
+                    else:
+                        print(f"[ERROR] No se pudo entregar el mensaje a '{nombre_real}'.")
                 else:
-                    print(f"[!] El usuario '{destinatario}' no está conectado.")
+                    with lock_clientes:
+                        conectados = ", ".join(clientes_conectados.keys()) or "ninguno"
+                    print(f"[!] El usuario '{destinatario}' no está conectado. Activos: {conectados}")
+
             else:
                 with lock_clientes:
                     cantidad = len(clientes_conectados)

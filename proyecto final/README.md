@@ -114,8 +114,8 @@ Una vez autenticado, el cliente puede escribir texto libre para chatear con el s
 
 | Comando | Descripción | Ejemplo de uso |
 | :--- | :--- | :--- |
-| `/repos <usuario>` | Consulta los repositorios públicos de `<usuario>` en GitHub y los guarda en la tabla `repositorios` de MySQL. | `/repos octocat` |
-| `/followers <usuario>` | Consulta los seguidores de `<usuario>` en GitHub y los guarda en la tabla `followers` de MySQL. | `/followers torvalds` |
+| `/repos <usuario>` | Consulta los repositorios públicos de `<usuario>` en GitHub y los guarda en la tabla `repositorios` de MySQL. | ejemplo:  `/repos octocat` |
+| `/followers <usuario>` | Consulta los seguidores de `<usuario>` en GitHub y los guarda en la tabla `followers` de MySQL. | ejemplo: `/followers torvalds` |
 | `/hora` | Solicita y muestra la fecha y hora actual del servidor. | `/hora` |
 | `/todos "mensaje"` | Difunde un mensaje global a todos los clientes conectados en ese momento. | `/todos "Hola a todos"` |
 | `/usuarios` | Devuelve la cantidad y la lista de todos los usuarios conectados actualmente. | `/usuarios` |

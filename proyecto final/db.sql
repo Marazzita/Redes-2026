@@ -36,9 +36,9 @@ CREATE TABLE IF NOT EXISTS followers (
 ) ENGINE=InnoDB;
 
 -- datos iniciales de prueba (contraseñas hasheadas en SHA-256)
-INSERT INTO usuarios (usuario, password_hash) VALUES
-('admin',    SHA2('admin123', 256)),
-('oriana', SHA2('1234', 256)),
-('alumno1',  SHA2('redes2026', 256)),
-('alumno2',  SHA2('clave456', 256))
+INSERT INTO usuarios (usuario, password_hash, rol) VALUES
+('admin',    SHA2('admin123', 256), 'admin'),
+('oriana', SHA2('1234', 256), 'admin'),
+('profe',  SHA2('redes', 256), 'usuario'),
+('alumno',  SHA2('clave123', 256), 'usuario')
 ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash);
