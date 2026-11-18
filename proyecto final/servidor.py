@@ -123,7 +123,7 @@ def consultar_y_guardar_repos(usuario_git: str) -> str:
 
         query = """
             INSERT INTO repositorios
-                (usuario_git, nombre_repo, descripcion, url_repo, lenguaje, estrellas)
+                (usuario_git, nombre_repo, descripcion, url_repo, lenguaje)
             VALUES (%s, %s, %s, %s, %s, %s)
         """
         registros = [
@@ -132,8 +132,7 @@ def consultar_y_guardar_repos(usuario_git: str) -> str:
                 repo.get("name", ""),
                 repo.get("description"),
                 repo.get("html_url", ""),
-                repo.get("language"),
-                repo.get("stargazers_count", 0)
+                repo.get("language")
             )
             for repo in repos
         ]
