@@ -35,10 +35,21 @@ CREATE TABLE IF NOT EXISTS followers (
     fecha_consulta TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
--- datos iniciales de prueba (contraseñas hasheadas en SHA-256)
+-- tabla usuarios 
+CREATE TABLE IF NOT EXISTS usuarios (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    usuario VARCHAR(50) NOT NULL UNIQUE,
+    password_hash VARCHAR(64) NOT NULL,
+    rol VARCHAR(20) NOT NULL DEFAULT 'usuario',
+    creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+-- Datos iniciales de prueba (contraseñas hasheadas en SHA-256)
 INSERT INTO usuarios (usuario, password_hash, rol) VALUES
-('admin',    SHA2('admin123', 256), 'admin'),
-('oriana', SHA2('1234', 256), 'admin'),
-('profe',  SHA2('redes', 256), 'usuario'),
-('alumno',  SHA2('clave123', 256), 'usuario')
-ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash);
+('admin',  SHA2('admin123', 256), 'admin'),
+('oriana', SHA2('1234', 256),     'admin'),
+('profe',  SHA2('redes', 256),    'usuario'),
+('alumno', SHA2('clave123', 256), 'usuario')
+ON DUPLICATE KEY UPDATE
+    password_hash = VALUES(password_hash),
+    rol = VALUES(rol);
