@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS repositorios (
 ) ENGINE=InnoDB;
 
 -- tabla followers (comando /followers usuario)
-CREATE TABLE IF NOT EXISTS `followers` (
+CREATE TABLE IF NOT EXISTS followers (
     id INT AUTO_INCREMENT PRIMARY KEY,
     usuario_git VARCHAR(100) NOT NULL,
     follower_usuario VARCHAR(100) NOT NULL,
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS `followers` (
 -- datos iniciales de prueba (contraseñas hasheadas en SHA-256)
 INSERT INTO usuarios (usuario, password_hash) VALUES
 ('admin',    SHA2('admin123', 256)),
-('oriana', SHA2('1234', 256))
+('oriana', SHA2('1234', 256)),
 ('alumno1',  SHA2('redes2026', 256)),
 ('alumno2',  SHA2('clave456', 256))
 ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash);
