@@ -94,7 +94,7 @@ def iniciar_cliente():
         )
         hilo_receptor.start()
 
-        print("\n--- Chat iniciado (escribí un mensaje o un comando con '/') ---")
+        print("\n--- Chat iniciado (escribí un mensaje, '@usuario mensaje' para privado o un comando con '/') ---")
         while sesion_activa:
             texto = input("> ")
             if not sesion_activa:

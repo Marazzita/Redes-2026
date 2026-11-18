@@ -120,8 +120,8 @@ def consultar_y_guardar_repos(usuario_git: str) -> str:
 
         query = """
             INSERT INTO repositorios
-                (usuario_git, nombre_repo, descripcion, url_repo, lenguaje)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                (usuario_git, nombre_repo, descripcion, repo_url, lenguaje)
+            VALUES (%s, %s, %s, %s, %s)
         """
         registros = [
             (
@@ -363,6 +363,10 @@ def procesar_comando(usuario: str, rol: str, texto_comando: str, conn: socket.so
         resultado = consultar_y_guardar_repos(argumento)
         enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
 
+    elif comando == "/ver_repos":
+        resultado = ver_repositorios_guardados(argumento)
+        enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
+
     elif comando == "/followers":
         if not argumento:
             enviar_paquete(conn, {"tipo": "mensaje", "mensaje": "Uso correcto: /followers <usuario_git>"})
@@ -371,7 +375,6 @@ def procesar_comando(usuario: str, rol: str, texto_comando: str, conn: socket.so
         enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
 
     elif comando == "/eliminar_repos":
-        # Verificación de permisos mediante el rol almacenado en MySQL
         if rol != "admin":
             enviar_paquete(
                 conn,
@@ -396,7 +399,6 @@ def procesar_comando(usuario: str, rol: str, texto_comando: str, conn: socket.so
         enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
 
     elif comando == "/crear_usuario":
-        # Verificación de permisos mediante el rol almacenado en MySQL
         if rol != "admin":
             enviar_paquete(
                 conn,
@@ -471,10 +473,6 @@ def procesar_comando(usuario: str, rol: str, texto_comando: str, conn: socket.so
             }
         )
         return False
-    
-    elif comando == "/ver_repos":
-        resultado = ver_repositorios_guardados(argumento)
-        enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
 
     else:
         comandos_disp = "/repos, /ver_repos, /followers, /hora, /todos, /usuarios, /adios"
@@ -543,11 +541,13 @@ def manejar_cliente(conn: socket.socket, addr):
         mensaje_bienvenida = (
             f"¡Hola {usuario_autenticado}! (Rol: {rol})\n"
             "Comandos disponibles: /repos <usuario>, /ver_repos [usuario], /followers <usuario>, "
-            "/hora, /todos \"mensaje\", /usuarios, /adios"
+            "/hora, /todos \"mensaje\", /usuarios, /adios\n"
+            "Mensaje privado a otro cliente: @usuario mensaje"
         )
         if rol == "admin":
             mensaje_bienvenida += "\nComandos admin: /eliminar_repos <usuario|todo>, /crear_usuario <usuario> <clave> [rol]"
 
+    
         enviar_paquete(
             conn,
             {
@@ -568,6 +568,19 @@ def manejar_cliente(conn: socket.socket, addr):
                 continuar = procesar_comando(usuario_autenticado, rol, contenido, conn)
                 if not continuar:
                     break
+            elif contenido.startswith("@"):
+                partes = contenido[1:].split(None, 1)
+                if len(partes) < 2 or not partes[1].strip():
+                    enviar_paquete(conn, {"tipo": "mensaje", "mensaje": "Uso correcto: @usuario mensaje"})
+                    continue
+
+                destinatario, texto_priv = partes[0], partes[1].strip()
+                ok, info = enviar_privado(usuario_autenticado, destinatario, texto_priv)
+                if ok:
+                    print(f"[Privado {usuario_autenticado} -> {info}]: {texto_priv}")
+                    enviar_paquete(conn, {"tipo": "mensaje", "mensaje": f"[Privado para {info}]: {texto_priv}"})
+                else:
+                    enviar_paquete(conn, {"tipo": "mensaje", "mensaje": f"[!] {info}"})
             else:
                 print(f"[Chat - {usuario_autenticado}]: {contenido}")
 
@@ -608,29 +621,11 @@ def consola_servidor():
                     continue
 
                 destinatario, mensaje = partes[0], partes[1].strip()
-                sock_destino = None
-                nombre_real = destinatario
-
-                with lock_clientes:
-                    for usr, info in clientes_conectados.items():
-                        if usr.lower() == destinatario.lower():
-                            sock_destino = info["socket"]
-                            nombre_real = usr
-                            break
-
-                if sock_destino:
-                    enviado = enviar_paquete(
-                        sock_destino,
-                        {"tipo": "mensaje", "mensaje": f"[Servidor (privado)]: {mensaje}"}
-                    )
-                    if enviado:
-                        print(f"[Privado -> {nombre_real}]: {mensaje}")
-                    else:
-                        print(f"[ERROR] No se pudo entregar el mensaje a '{nombre_real}'.")
+                ok, info = enviar_privado("Servidor", destinatario, mensaje)
+                if ok:
+                    print(f"[Privado -> {info}]: {mensaje}")
                 else:
-                    with lock_clientes:
-                        conectados = ", ".join(clientes_conectados.keys()) or "ninguno"
-                    print(f"[!] El usuario '{destinatario}' no está conectado. Activos: {conectados}")
+                    print(f"[!] {info}")
 
             else:
                 with lock_clientes:
@@ -642,6 +637,31 @@ def consola_servidor():
                     print(f"[Difundido a {cantidad} cliente(s)]: {entrada}")
         except EOFError:
             break
+
+def enviar_privado(remitente: str, destinatario: str, mensaje: str) -> tuple[bool, str]:
+    """Envía un mensaje privado a un cliente conectado (insensible a mayúsculas)."""
+    sock_destino = None
+    nombre_real = destinatario
+
+    with lock_clientes:
+        for usr, info in clientes_conectados.items():
+            if usr.lower() == destinatario.lower():
+                sock_destino = info["socket"]
+                nombre_real = usr
+                break
+        conectados = ", ".join(clientes_conectados.keys()) or "ninguno"
+
+    if not sock_destino:
+        return False, f"El usuario '{destinatario}' no está conectado. Activos: {conectados}"
+
+    enviado = enviar_paquete(
+        sock_destino,
+        {"tipo": "mensaje", "mensaje": f"[{remitente} (privado)]: {mensaje}"}
+    )
+    if not enviado:
+        return False, f"No se pudo entregar el mensaje a '{nombre_real}'."
+
+    return True, nombre_real
 
 
 #------------------------------------------------

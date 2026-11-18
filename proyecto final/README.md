@@ -115,10 +115,12 @@ Una vez autenticado, el cliente puede escribir texto libre para enviar mensajes 
 | Comando | Descripción | Ejemplo de uso |
 | :--- | :--- | :--- |
 | `/repos <usuario_git>` | Consulta los repositorios públicos de `<usuario_git>` en GitHub y los guarda en la tabla `repositorios` de MySQL. | `/repos octocat` |
+| `/ver_repos` | Consulta los repositorios previamente guardados  | `/ver_repos` |
 | `/followers <usuario_git>` | Consulta los seguidores de `<usuario_git>` en GitHub y los guarda en la tabla `followers` de MySQL. | `/followers torvalds` |
 | `/hora` | Solicita y muestra la fecha y hora actual del servidor (`dd/mm/aaaa hh:mm:ss`). | `/hora` |
 | `/todos "mensaje"` | Difunde un mensaje global a todos los clientes conectados en ese momento. | `/todos "Hola a todos"` |
 | `/usuarios` | Devuelve la cantidad, el nombre y el rol de todos los usuarios conectados actualmente. | `/usuarios` |
+| `@usuario` | Envia un mensaje privado al usuario elegido | `@oriana` |
 | `/adios` | Envía un aviso de despedida, cierra la sesión en el servidor y desconecta al cliente (también se ejecuta al salir con `Ctrl+C`). | `/adios` |
 
 ### Comandos Administrativos (solo rol `admin`)
