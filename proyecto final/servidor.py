@@ -87,9 +87,6 @@ def crear_usuario_bd(nuevo_usuario: str, nueva_password: str, rol: str = "usuari
             conn_db.close()
 
 
-#------------------------------------------------
-# FUNCIONES DE API DE GITHUB Y PERSISTENCIA
-#------------------------------------------------
 
 
 #--------------------------------------------------------------
@@ -157,6 +154,55 @@ def consultar_y_guardar_repos(usuario_git: str) -> str:
         if conn_db and conn_db.is_connected():
             conn_db.close()
 
+def ver_repositorios_guardados(usuario_git: str = "") -> str:
+    """Consulta en MySQL los repositorios guardados (todos o filtrados por usuario_git)."""
+    conn_db = None
+    cursor = None
+    try:
+        conn_db = conexion_db()
+        cursor = conn_db.cursor()
+
+        if usuario_git:
+            query = """
+                SELECT usuario_git, nombre_repo, lenguaje, repo_url
+                FROM repositorios
+                WHERE usuario_git = %s
+                ORDER BY fecha_consulta DESC, id DESC
+            """
+            cursor.execute(query, (usuario_git,))
+        else:
+            query = """
+                SELECT usuario_git, nombre_repo, lenguaje, repo_url
+                FROM repositorios
+                ORDER BY usuario_git ASC, id DESC
+            """
+            cursor.execute(query)
+
+        filas = cursor.fetchall()
+        if not filas:
+            if usuario_git:
+                return f"No hay repositorios guardados en MySQL para '{usuario_git}'."
+            return "Todavía no hay repositorios guardados en la base de datos."
+
+        lineas = [
+            f"  - [{usr}] {nombre} ({lenguaje or 'Sin lenguaje'}): {url}"
+            for usr, nombre, lenguaje, url in filas[:25]
+        ]
+        aviso_extra = f"\n  ... y {len(filas) - 25} más." if len(filas) > 25 else ""
+        encabezado = (
+            f"Repositorios guardados de '{usuario_git}' ({len(filas)}):"
+            if usuario_git
+            else f"Total de repositorios guardados en MySQL ({len(filas)}):"
+        )
+        return f"{encabezado}\n" + "\n".join(lineas) + aviso_extra
+
+    except Error as e:
+        return f"Error al consultar repositorios en MySQL: {e}"
+    finally:
+        if cursor:
+            cursor.close()
+        if conn_db and conn_db.is_connected():
+            conn_db.close()
 
 #--------------------------------------------------------------
 # Consultar y Guardar seguidores
@@ -425,9 +471,13 @@ def procesar_comando(usuario: str, rol: str, texto_comando: str, conn: socket.so
             }
         )
         return False
+    
+    elif comando == "/ver_repos":
+        resultado = ver_repositorios_guardados(argumento)
+        enviar_paquete(conn, {"tipo": "mensaje", "mensaje": resultado})
 
     else:
-        comandos_disp = "/repos, /followers, /hora, /todos, /usuarios, /adios"
+        comandos_disp = "/repos, /ver_repos, /followers, /hora, /todos, /usuarios, /adios"
         if rol == "admin":
             comandos_disp += ", /eliminar_repos, /crear_usuario"
 
@@ -492,7 +542,7 @@ def manejar_cliente(conn: socket.socket, addr):
 
         mensaje_bienvenida = (
             f"¡Hola {usuario_autenticado}! (Rol: {rol})\n"
-            "Comandos disponibles: /repos <usuario>, /followers <usuario>, "
+            "Comandos disponibles: /repos <usuario>, /ver_repos [usuario], /followers <usuario>, "
             "/hora, /todos \"mensaje\", /usuarios, /adios"
         )
         if rol == "admin":
