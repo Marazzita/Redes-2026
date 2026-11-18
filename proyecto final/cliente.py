@@ -59,7 +59,7 @@ def iniciar_cliente():
         sock.connect((HOST, PORT))
         print(f"Conectado al servidor en {HOST}:{PORT}")
 
-        # 1. Solicitar y enviar credenciales al conectarse
+        # solicitar y enviar credenciales al conectarse
         print("\n=== INICIO DE SESIÓN ===")
         usuario = input("Usuario: ").strip()
         password = input("Contraseña: ").strip()
@@ -73,7 +73,7 @@ def iniciar_cliente():
             }
         )
 
-        # 3. Esperar resultado de autenticación del servidor
+        # esperar resultado de autenticación del servidor
         lector = leer_lineas_json(sock)
         respuesta_auth = next(lector, None)
 
@@ -86,7 +86,7 @@ def iniciar_cliente():
         if not respuesta_auth.get("ok"):
             return
 
-        # 4 y 5. Iniciar hilo de escucha y bucle de envío de chat/comandos
+        # iniciar hilo de escucha y bucle de envío de chat/comandos
         hilo_receptor = threading.Thread(
             target=escuchar_servidor,
             args=(sock,),
